@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cr-mas"
+version = "0.1.0"
+description = "CodeReview Multi-Agent System"
+requires-python = ">=3.11"
+dependencies = [
+    "langgraph>=0.4,<1.0",
+    "langchain-community>=0.3,<1.0",
+    "click>=8.0",
+    "rich>=13.0",
+    "flake8>=7.0",
+    "radon>=6.0",
+    "bandit>=1.7",
+    "gitpython>=3.1",
+    "pydantic-settings>=2.0",
+]
+
+[project.scripts]
+cr = "cr_mas.main:cli"
