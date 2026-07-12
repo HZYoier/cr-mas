@@ -46,7 +46,7 @@ def run(changed_files: list) -> dict:
             "effort_hours（预估工时小时数）\n\n"
             f"代码:\n{all_code}\n\n"
             "输出纯 JSON 数组，不要 markdown 包裹。"
-            '格式: [{"type": "...", "trigger": {"file": "...", "line": 0}, '
+            '格式: [{"type": "架构优化/设计模式/库建议/可测试性/功能扩展（用中文）", "trigger": {"file": "...", "line": 0}, '
             '"current": "...", "improvement": "...", '
             '"priority": "HIGH", "effort_hours": 2}]'
         )

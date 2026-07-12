@@ -120,17 +120,18 @@ def commit(message, no_fail, skip_review):
         table.add_column("位置", style="dim")
         table.add_column("优先级")
         table.add_column("类型")
-        table.add_column("描述")
-        table.add_column("工时")
+        table.add_column("描述", overflow = None)
         for item in ext:
             where = item.get("file", "")
+            line = item.get("line")
+            if line:
+                where += f":{line}"
             desc = item.get("desc", "")
             table.add_row(
                 where,
                 item.get("priority", ""),
                 item.get("type", ""),
                 desc,
-                f"{item.get('effort_hours', '?')}h",
             )
         console.print(table)
 

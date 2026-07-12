@@ -10,7 +10,10 @@ import re
 # 正则匹配
 _FUZZY_RULES = [
     (r"'.+' imported but unused", "导入但未使用"),
-    (r"undefined name'.*'", "变量未定义")
+    (r"undefined name'.*'", "变量未定义"),
+    (r"expected \d+ blank lines?.*found \d+", "空行数量不符合规范"),
+    (r"too many blank lines \(\d+\)", "连续空行过多"),
+
 ]
 
 def _fuzzy_translate(text):

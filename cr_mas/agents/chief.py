@@ -246,9 +246,9 @@ def review_node(state: ReviewState):
 
     # 处理扩展顾问的报告
     if extension:
-        suggestions = extension.get("suggestions", {})
+        suggestions = extension.get("suggestions", [])
         for sug in suggestions:
-            trigger = sug.get("trigger", [])
+            trigger = sug.get("trigger", {})
             extension_advice.append({
                 "file": trigger.get("file"),
                 "line": trigger.get("line"),
