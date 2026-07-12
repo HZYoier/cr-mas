@@ -24,7 +24,7 @@ def _build_memory_context() -> str:
 
 def _detect_conflicts_with_llm(reports: dict, memory_text: str) -> dict:
     """
-    将五份报告打包发给 V4 Pro，检测 Agent 间的矛盾并裁决
+    将6份报告打包发给 V4 Pro，检测 Agent 间的矛盾并裁决
     返回 LLM 的建议裁决，失败时返回空 dict
     """
     import json
