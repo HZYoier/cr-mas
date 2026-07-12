@@ -14,3 +14,10 @@ build/
 
 # 运行时数据库
 cr_mas_memory.db
+*.db
+
+# 测试缓存
+.pytest_cache/
+
+# 生成的文件
+实验报告.docx

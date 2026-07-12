@@ -50,7 +50,7 @@ cr commit -m "wip" --skip-review
 # 审查有问题也允许提交
 cr commit -m "hotfix" --no-fail
 
-# 查看历史审查记录
+# 查看最近5条历史审查记录
 cr history --limit 5
 ```
 
@@ -101,9 +101,13 @@ cr-mas/
 │   ├── memory/          # 长期记忆（SQLite）
 │   │   ├── schema.sql, sqlite_store.py
 │   └── main.py          # CLI 入口
+│   └── config/           # 配置管理
+│       ├── settings.py
 ├── tests/
-│   ├── fixtures/        # 测试代码样本
-│   └── test_*.py        # 5 个测试
+│   ├── fixtures/         # 测试代码样本
+│   └── test_*.py         # 6 个测试
+├── README.md
+├── .env.example
 └── pyproject.toml
 ```
 
