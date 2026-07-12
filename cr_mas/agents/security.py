@@ -61,7 +61,7 @@ def run(file_path: str) -> dict:
                     f"你是安全专家，Bandit报告了以下安全问题，请判断是否是真漏洞。\n\n"
                     f"规则: {alert['risk_type']}\n"
                     f"描述: {alert['description']}\n"
-                    f"代码:\n'''python\n{context}\n'''\n\n"
+                    f"代码:\n```python\n{context}\n```\n\n"
                     f"回答: [真] 或 [假]"
                 )
 

@@ -37,3 +37,11 @@ SELECT
     ROUND(SUM(CASE WHEN user_action = 'accept' THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 1) AS rate
 FROM user_feedback
 GROUP BY module, agent_source;
+
+-- flake8 翻译
+CREATE TABLE IF NOT EXISTS style_translations (
+    en TEXT PRIMARY KEY,
+    zh TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+

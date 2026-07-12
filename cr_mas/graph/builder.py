@@ -6,6 +6,7 @@ from cr_mas.agents.performance import review_node as performance_node
 from cr_mas.agents.readability import review_node as readability_node
 from cr_mas.agents.chief import review_node as chief_node
 from cr_mas.agents.extension import review_node as extension_node
+from cr_mas.agents.bug import review_node as bug_node
 
 
 def build_review_graph() -> StateGraph:
@@ -16,6 +17,7 @@ def build_review_graph() -> StateGraph:
     builder.add_node("readability", readability_node)
     builder.add_node("chief", chief_node)
     builder.add_node("extension", extension_node)
+    builder.add_node("bug", bug_node)
 
     builder.set_entry_point("style_keeper")
 
@@ -23,11 +25,9 @@ def build_review_graph() -> StateGraph:
     builder.add_edge("security", "performance")
     builder.add_edge("performance", "readability")
     builder.add_edge("readability", "extension")
-    builder.add_edge("extension", "chief")
+    builder.add_edge("extension", "bug")
+    builder.add_edge("bug", "chief")
     builder.add_edge("chief", END)
-    
-    
-
     
     return builder.compile()
 

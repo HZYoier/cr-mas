@@ -1,5 +1,6 @@
 from cr_mas.graph.state import ReviewState
 from cr_mas.memory.sqlite_store import get_agent_accuracy
+from cr_mas.llm.client import parse_llm_json
 
 
 def _build_memory_context() -> str:
@@ -21,7 +22,7 @@ def _build_memory_context() -> str:
     return "\n".join(lines)
 
 
-def _detect_conflilicts_with_llm(reports: dict, memory_text: str) -> dict:
+def _detect_conflicts_with_llm(reports: dict, memory_text: str) -> dict:
     """
     将五份报告打包发给 V4 Pro，检测 Agent 间的矛盾并裁决
     返回 LLM 的建议裁决，失败时返回空 dict
@@ -30,7 +31,7 @@ def _detect_conflilicts_with_llm(reports: dict, memory_text: str) -> dict:
     from cr_mas.llm.client import get_pro_llm
 
     prompt = (
-        "你是代码审查委员会的主编。收到了 5 位专家 Agent 的审查报告，"
+        "你是代码审查委员会的主编。收到了 6 位专家 Agent 的审查报告，"
         "请检测报告之间是否存在矛盾，并给出裁决。\n\n"
         f"## 历史记忆\n{memory_text}\n"
         f"## 风格警察报告\n{json.dumps(reports.get('style', {}), ensure_ascii=False)}\n\n"
@@ -38,11 +39,13 @@ def _detect_conflilicts_with_llm(reports: dict, memory_text: str) -> dict:
         f"## 性能顾问报告\n{json.dumps(reports.get('performance', {}), ensure_ascii=False)}\n\n"
         f"## 可读性顾问报告\n{json.dumps(reports.get('readability', {}), ensure_ascii=False)}\n\n"
         f"## 扩展顾问报告\n{json.dumps(reports.get('extension', {}), ensure_ascii=False)}\n\n"
+        f"## Bug 猎人报告\n{json.dumps(reports.get('bug', {}), ensure_ascii=False)}\n\n"
         "## 裁决规则\n"
         "1. 安全哨兵 is_critical=True → 无条件采纳，放在 must_fix\n"
         "2. 风格/可读性建议互相矛盾时 → 查历史采纳率，采纳率高的优先\n"
         "3. 性能 vs 可读性矛盾时 → 保守：性能优先\n"
-        "4. 扩展建议 → 始终放 lowest 优先级\n\n"
+        "4. 扩展建议 → 始终放 lowest 优先级\n"
+        "5. Bug 猎人 severity=CRITICAL → 必须修复；MEDIUM → 强烈建议\n"
         "## 输出格式\n"
         "输出纯 JSON（不要 markdown 包裹），结构如下：\n"
         '{\n'
@@ -61,12 +64,7 @@ def _detect_conflilicts_with_llm(reports: dict, memory_text: str) -> dict:
     try:
         llm = get_pro_llm()
         response = llm.invoke(prompt)
-        content = response.content.strip()
-        if content.startswith("```"):
-            content = content.split("\n", 1)[-1]
-            if content.endswith("```"):
-                content = content.rsplit("\n", 1)[0]
-        return json.loads(content)
+        return parse_llm_json(response.content)
     except Exception:
         return {}
 
@@ -82,7 +80,8 @@ def review_node(state: ReviewState):
     security = state.get("security_report", {})
     performance = state.get("performance_report", {})
     readability = state.get("readability_report", {})
-    extension = state.get("extension_report", [])
+    extension = state.get("extension_report", {})
+    bug = state.get("bug_report", {})
     trace = [] # ReAct推理链
 
     # LLM冲突检测
@@ -91,10 +90,11 @@ def review_node(state: ReviewState):
         "security": security,
         "performance": performance,
         "readability": readability,
-        "extension": extension
+        "extension": extension,
+        "bug": bug
     }
     memory_text = _build_memory_context()
-    llm_analysis = _detect_conflilicts_with_llm(reports, memory_text)
+    llm_analysis = _detect_conflicts_with_llm(reports, memory_text)
     if llm_analysis.get("conflicts_detected"):
         trace.append(
             f"LLM检测到 {len(llm_analysis.get('conflicts', []))} 个 Agent 冲突"
@@ -112,8 +112,6 @@ def review_node(state: ReviewState):
     strong_suggestions = [] # 强烈建议
     optional_improvements = [] # 可选优化
     extension_advice = [] # 扩展建议
-
-
     
 
     # 处理安全哨兵的报告
@@ -135,6 +133,28 @@ def review_node(state: ReviewState):
             f"安全哨兵：{len(alerts)} 个安全问题， 其中{len(critical_fixes)} 个严重"
         )
 
+
+    # 处理Bug猎人的报告
+    if bug:
+        bugs = bug.get("bugs", [])
+        for b in bugs:
+            item = {
+                "file": b.get("file"),
+                "line": b.get("line"),
+                "type": f"潜在 bug",
+                "desc": f"{b.get('description', '')} → {b.get('fix', )}",
+                "source": "Bug 猎人"
+            }
+            if b.get("severity") == "CRITICAL":
+                critical_fixes.append(item)
+            else:
+                strong_suggestions.append(item)
+        
+        trace.append(
+            f"Bug 猎人：发现 {len(bugs)} 个潜在缺陷，"
+            f"其中 {len([b for b in bugs if b.get('severity') == 'CRITICAL'])} 个严重"
+        )
+    
 
     # 处理性能顾问的报告
     if performance:
@@ -168,10 +188,11 @@ def review_node(state: ReviewState):
                     "file": file_path,
                     "line": None,
                     "type": "注释率过低",
-                    "desc": f"注释率为 {m['comment_ratio']:.0%}, 总行数 {m.get('total_lines')}, 注释行数 {m.get('comment_lines')}",
+                    "desc": f"注释率仅 {m['comment_ratio']:.0%}（{m.get('comment_lines', 0)}/{m.get('total_lines', '?')} 行），建议为关键逻辑和函数添加注释",
                     "source": "可读性顾问"
                 })
             
+            # 魔法数字
             magic_list = readability.get("magic_suggestions", [])
             for magic in magic_list:
                 if magic.get("file") == file_path:
@@ -180,6 +201,29 @@ def review_node(state: ReviewState):
                         "line": magic.get("line"),
                         "type": "魔法数字",
                         "desc": f"建议定义常量 {magic.get('name_hint', 'UNNAMED')}",
+                        "source": "可读性顾问"
+                    })
+            # 变量命名
+            naming_list = readability.get("naming_suggestions", [])
+            for naming in naming_list:
+                if naming.get("file") == file_path:
+                    strong_suggestions.append({
+                        "file": file_path,
+                        "line": naming.get("line"),
+                        "type": "命名建议",
+                        "desc": f"变量 {naming.get('name', '')} → {naming.get('suggestion', '')}",
+                        "source": "可读性顾问"
+                    })
+
+            # 函数拆分
+            split_list = readability.get("split_suggestions", [])
+            for split in split_list:
+                if split.get("name") in [f["name"] for f in functions if f.get("file") == file_path]:
+                    strong_suggestions.append({
+                        "file": file_path,
+                        "line": split.get("line"),
+                        "type": "建议拆分函数 - {split.get('reason', '')}",
+                        "desc": f"建议拆分为: {', '.join(split.get('suggested_split', []))}",
                         "source": "可读性顾问"
                     })
 
@@ -196,13 +240,13 @@ def review_node(state: ReviewState):
 
         trace.append(
             f"可读性顾问：分析了 {len(metrics)} 个文件，"
-            f"共 {len(functions)} 个函数，其中 {len(strong_suggestions)} 个函数存在可读性问题"
+            f"共 {len(functions)} 个函数"
         )
 
 
     # 处理扩展顾问的报告
     if extension:
-        suggestions = extension.get("suggestions", [])
+        suggestions = extension.get("suggestions", {})
         for sug in suggestions:
             trigger = sug.get("trigger", [])
             extension_advice.append({

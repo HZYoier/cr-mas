@@ -9,7 +9,8 @@ class ReviewState(TypedDict):
     security_report: Optional[dict] # 安全哨兵的报告
     performance_report: Optional[dict] # 性能顾问的报告
     readability_report: Optional[dict] # 可读性顾问的报告
-    extension_report: Optional[dict]
+    extension_report: Optional[dict] # 扩展顾问的报告
+    bug_report: Optional[dict] # bug猎人的报告
     final_report: Optional[dict] # 主编的最终报告
     react_trace: Optional[dict] # ReAct推理链
 

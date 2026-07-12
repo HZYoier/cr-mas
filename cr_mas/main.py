@@ -12,6 +12,16 @@ from rich import box
 
 console = Console()
 
+# flake8 规则翻译映射表
+FLAKE8_RULES = {
+    "E": "格式问题",
+    "W": "格式建议",
+    "F": "未使用变量/import",
+    "N": "命名规范",
+    "B": "常见陷阱",
+    "D": "文档注释",
+    "C": "圈复杂度"
+}
 
 @click.group()
 def cli():
@@ -41,7 +51,8 @@ def commit(message, no_fail, skip_review):
         return
     
     graph = build_review_graph()
-    result = graph.invoke({
+    with console.status("[bold green]🔍 审查中...[/bold green]", spinner = "dots12"):
+        result = graph.invoke({
         "changed_files": git_data["changed_files"],
         "raw_diff": git_data["raw_diff"],
         "commit_hash": git_data["commit_hash"]
@@ -54,51 +65,91 @@ def commit(message, no_fail, skip_review):
         click.echo("❌ 主编未生成报告")
         return
     
-    click.echo(f"📋 Code Review 报告")
+    console.print(Panel.fit("[bold]Code Review Report[/bold]", border_style="cyan"))
+
 
     # 必须修复
     critical = final.get("critical_fixes", [])
     if critical:
-        click.echo(f"\n🔴 必须修复 ({len(critical)} 处):")
+        table = Table(title="🔴 必须修复", box=box.SIMPLE, title_style="bold red", row_styles=["", "dim"])
+        table.add_column("位置", style="dim")
+        table.add_column("来源")
+        table.add_column("描述")
         for fix in critical:
-            where = f"{fix['file']} : {fix['line']}" if fix.get("line") else fix['file']
-            click.echo(f"  {where} [{fix['source']}] {fix['type']} - {fix['desc']}")
+            where = f"{fix.get('file', '')}:{fix.get('line', '')}" if fix.get("line") else fix.get("file")
+            desc = f"[{fix.get('type', '')}] {fix.get('desc', '')}"
+            table.add_row(where, fix.get("source", ""), desc)
+        console.print(table)
+
     
     # 建议修复
     strong = final.get("strong_suggestions", [])
     if strong:
-        click.echo(f"\n🟡 建议修复 ({len(strong)} 处):")
+        table = Table(title="🟡 强烈建议", box=box.SIMPLE, title_style="bold yellow", row_styles=["", "dim"])
+        table.add_column("位置", style="dim")
+        table.add_column("来源")
+        table.add_column("描述")
         for sug in strong:
-            where = f"{sug['file']} : {sug['line']}" if sug.get("line") else sug['file']
-            click.echo(f"  {where} [{sug['source']}] {sug['type']} - {sug['desc']}")
+            where = f"{sug.get('file', '')}:{sug.get('line', '')}" if sug.get("line") else sug.get("file")
+            table.add_row(where, sug.get("source", ""), sug.get("desc", ""))
+        console.print(table)
+
 
     # 可选优化
-    optional = final.get("optional_improvements", [])
+        optional = final.get("optional_improvements", [])
     if optional:
-        click.echo(f"\n🔵 可选优化 ({len(optional)}) 处")
+        table = Table(title="🔵 可选优化", box=box.SIMPLE, title_style="bold blue", row_styles=["", "dim"])
+        table.add_column("位置", style="dim")
+        table.add_column("来源")
+        table.add_column("描述")
         for opt in optional:
-            where = f"{opt['file']} : {opt['line']}" if opt.get("line") else opt['file']
-            click.echo(f"  {where} [{opt['source']}] {opt['type']} - {opt['desc']}")
+            where = f"{opt.get('file', '')}:{opt.get('line', '')}" if opt.get("line") else opt.get("file")
+            rule_prefix = opt.get("type", "").split(" - ")[-1][0] if " - " in opt.get("type", "") else ""
+            category = FLAKE8_RULES.get(rule_prefix, "风格")
+            table.add_row(where, category, opt.get("desc", ""))
+        console.print(table)
+
 
     # 扩展建议
     ext = final.get("extension_advice", [])
-    if ext:
-        click.echo(f"\n💡 扩展建议（{len(ext)} 项，仅供参考）")
-        for item in ext:
-            where = f"{item['file']}" if item.get("file") else ""
-            hours = f" [预估{item.get('effort_hours')}h]" if item.get("effort_hours") else ""
-            click.echo(
-                f"   {where} [{item.get('priority', 'MEDIUM')}] {item['type']} {hours}"
-            )
-            click.echo(f"    {item['desc']}")
+    priority_order = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
+    ext = sorted(ext, key=lambda x: priority_order.get(x.get("priority", "LOW"), 99))
 
+    if ext:
+        table = Table(title="💡 扩展建议（仅供参考）", box=box.SIMPLE, title_style="bold green", row_styles=["", "dim"])
+        table.add_column("位置", style="dim")
+        table.add_column("优先级")
+        table.add_column("类型")
+        table.add_column("描述")
+        table.add_column("工时")
+        for item in ext:
+            where = item.get("file", "")
+            desc = item.get("desc", "")
+            table.add_row(
+                where,
+                item.get("priority", ""),
+                item.get("type", ""),
+                desc,
+                f"{item.get('effort_hours', '?')}h",
+            )
+        console.print(table)
+
+    # 主编推理链
     trace = result.get("react_trace", [])
     if trace:
-        click.echo(f"\n🧠 主编推理链：")
-        for step in trace:
-            click.echo(f"  {step}")
+        console.print(Panel(
+            "\n".join(trace),
+            title="🧠 主编推理链",
+            border_style="dim",
+        ))
 
-    click.echo(f"\n📊 总计: 🔴 {summary['critical']} | 🟡 {summary['strong']} | 🔵 {summary['optional']} | 💡 {summary['extension']}")
+    # 汇总
+    console.print(Panel.fit(
+        f"🔴 {summary.get('critical', 0)} | 🟡 {summary.get('strong', 0)} | 🔵 {summary.get('optional', 0)} | 💡 {summary.get('extension', 0)}",
+        title="📊 总计",
+        border_style="cyan",
+    ))
+
 
     # 是否允许提交，有严重问题时阻止提交
     critical_count = summary.get("critical", 0)

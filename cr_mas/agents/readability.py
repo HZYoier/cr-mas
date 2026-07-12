@@ -3,6 +3,7 @@
 import ast
 from cr_mas.graph.state import ReviewState
 from cr_mas.tools.file_reader import read_source
+from cr_mas.llm.client import parse_llm_json
 
 
 def _find_magic_numbers(tree: ast.AST) -> list[dict]:
@@ -22,6 +23,39 @@ def _find_magic_numbers(tree: ast.AST) -> list[dict]:
     return candidates
 
 
+def _find_variables(tree: ast.AST) -> list[dict]:
+    """
+    找出所有变量赋值和函数参数，
+    过滤掉单字母循环变量和双下划线系统变量
+    """
+    candidates = []
+    skip_names = {"self", "cls", "i", "j", "k", "x", "y"}
+
+    for node in ast.walk(tree):
+        # 函数参数
+        if isinstance(node, ast.FunctionDef):
+            for arg in node.args.args:
+                if arg.arg not in skip_names and not arg.arg.startswith("__"):
+                    candidates.append({
+                        "name": arg.arg,
+                        "line": node.lineno,
+                        "context": "函数参数"
+                    })
+
+        # 变量赋值
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    name = target.id
+                    if name not in skip_names and not name.startswith("__"):
+                        candidates.append({
+                            "name": name,
+                            "line": node.lineno,
+                            "context": "变量赋值"
+                        })
+    return candidates            
+
+
 
 def run(file_path: str) -> dict:
     """
@@ -32,7 +66,6 @@ def run(file_path: str) -> dict:
         {"metrics": {...}, "suggestions": [...]}
     """
     source = read_source(file_path)
-
     lines = source.split("\n")
     total_lines = len(lines)
     comment_lines = 0 # 注释行总数
@@ -44,7 +77,22 @@ def run(file_path: str) -> dict:
     # 注释率
     comment_ratio = round(comment_lines / total_lines, 2) if total_lines > 0 else 0
 
-    tree = ast.parse(source)
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return {
+            "metrics": {
+                "total_lines": total_lines,
+                "comment_lines": comment_lines,
+                "comment_ratio": comment_ratio,
+                "function_count": 0,
+                "max_function_lines": 0,
+            },
+            "functions": [],
+            "magic_suggestions": [],
+            "naming_suggestions": [],
+            "split_suggestions": [],
+        }
 
     # 检查数字字面量
     magic_candidates = _find_magic_numbers(tree)
@@ -73,13 +121,32 @@ def run(file_path: str) -> dict:
             response = llm.invoke(prompt)
             import json
             try:
-                content = response.content.strip()
-                # 去掉markdown包裹
-                if content.startswith("```"):
-                    content = content.split("\n", 1)[-1] # 去掉第一行
-                    if content.endswith("```"):
-                        content = content.rsplit("\n", 1)[0] # 去掉最后一行
-                magic_suggestions = json.loads(content)
+                magic_suggestions = parse_llm_json(response.content)
+            except json.JSONDecodeError:
+                pass
+        except Exception:
+            pass
+
+    # 检查变量命名
+    var_candidates = _find_variables(tree)
+    naming_suggestions = []
+    if var_candidates:
+        try:
+            from cr_mas.llm.client import get_fast_llm
+
+            items = [f"第{c['line']}行：{c['name']}（{c['context']}" for c in var_candidates]
+            prompt = (
+                "你是代码可读性专家。以下变量名中，哪些不够自解释、需要重命名？\n\n"
+                + "\n".join(items)
+                + "\n\n输出格式: JSON数组 [{name: '原名', line: 行号, suggestion: '建议名称'}]\n"
+                "不需要改的直接省略。只标记真正模糊的名称，不要过度标注。建议名称必须使用 snake_case 风格。\n"
+            )
+
+            llm = get_fast_llm()
+            response = llm.invoke(prompt)
+            import json
+            try:
+                naming_suggestions = parse_llm_json(response.content)
             except json.JSONDecodeError:
                 pass
         except Exception:
@@ -99,6 +166,43 @@ def run(file_path: str) -> dict:
 
     max_function_lines = max((f["lines"] for f in functions), default = 0)
 
+    # 检查函数是否需要拆分
+    split_suggestions = []
+    if functions:
+        try:
+            from cr_mas.llm.client import get_fast_llm
+
+            func_lines_text = []
+            for f in functions:
+                start = f["line"] - 1
+                end = f["end_line"]
+                body = "".join(
+                    f"  {i + 1}: {lines[i]}"
+                    for i in range(start, min(end, len(lines)))
+                )
+                func_lines_text.append(
+                    f"函数 {f['name']}(), {f['line']}行:\n{body}"
+                )
+
+            prompt = (
+                "你是代码可读性专家。以下函数中，哪些应该拆分为更小的函数？\n\n"
+                + "\n\n".join(func_lines_text)
+                + "\n\n输出格式: JSON数组 [{name: '函数名', line: 行号, "
+                "reason: '拆分理由', suggested_split: ['子函数1', '子函数2']}]\n"
+                "不需要拆分的直接省略。只标记真正需要拆分的函数。"
+            )
+
+            llm = get_fast_llm()
+            response = llm.invoke(prompt)
+            import json
+            try:
+                split_suggestions = parse_llm_json(response.content)
+            except json.JSONDecodeError:
+                pass
+        except Exception:
+            pass        
+        
+                
     return {
         "metrics": {
             "total_lines": total_lines,
@@ -108,7 +212,9 @@ def run(file_path: str) -> dict:
             "max_function_lines": max_function_lines
         },
         "functions": functions,
-        "magic_suggestions": magic_suggestions
+        "magic_suggestions": magic_suggestions,
+        "naming_suggestions": naming_suggestions,
+        "split_suggestions": split_suggestions
     }
     
 
@@ -120,6 +226,8 @@ def review_node(state: ReviewState) -> dict:
     all_metrics = {}
     all_functions = []
     all_magic = []
+    all_naming = []
+    all_splits = []
 
     for file_path in state["changed_files"]:
         if not file_path.endswith(".py"):
@@ -145,12 +253,22 @@ def review_node(state: ReviewState) -> dict:
         all_magic.extend(
             {"file": file_path, **m} for m in result.get("magic_suggestions", [])
         )
+        all_naming.extend(
+            {"file": file_path, **n} for n in result.get("naming_suggestions", [])
+
+        )
+        all_splits.extend(
+            {"file": file_path, **s} for s in result.get("split_suggestions", [])
+        )
+
 
     return {
         "readability_report": {
             "metrics": all_metrics,
             "functions": all_functions,
-            "magic_suggestions": all_magic
+            "magic_suggestions": all_magic,
+            "naming_suggestions": all_naming,
+            "split_suggestions": all_splits
         }
     }
 

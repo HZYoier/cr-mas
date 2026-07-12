@@ -2,6 +2,8 @@
 
 from cr_mas.tools.file_reader import read_source
 from cr_mas.graph.state import ReviewState
+from cr_mas.llm.client import parse_llm_json
+
 
 def run(changed_files: list) -> dict:
     """
@@ -33,6 +35,10 @@ def run(changed_files: list) -> dict:
             "4. 功能扩展——基于现有代码，可加什么功能？\n"
             "5. 可测试性——是否容易写单元测试？\n\n"
             "规则：\n"
+            "- [重要] 你是扩展顾问，不是 Bug 猎人。不要报告语法错误、类型错误、"
+            "逻辑 bug、或任何导致程序崩溃的问题——Bug 猎人已经处理了。"
+            "- [重要] 安全相关建议（硬编码密码、SQL注入等）由安全哨兵负责，你不要重复。\n"
+            "你只负责架构改进、设计模式、库建议、功能扩展、可测试性。\n"
             "- 不要建议'从头重写'\n"
             "- 每个建议必须是增量式的、可落地的\n"
             "- 每个建议包含 type、trigger（文件+行号）、current（现状）、"
@@ -47,14 +53,7 @@ def run(changed_files: list) -> dict:
 
         llm = get_pro_llm()
         response = llm.invoke(prompt)
-
-        import json
-        content = response.content.strip()
-        if content.startswith("```"):
-            content = content.split("\n", 1)[-1]
-            if content.endswith("```"):
-                content = content.rsplit("\n", 1)[0]
-        suggestions = json.loads(content)
+        suggestions = parse_llm_json(response.content)
         return {"suggestions": suggestions}
 
     except Exception:
