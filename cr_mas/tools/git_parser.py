@@ -1,9 +1,8 @@
-"""Git 缓存区解析，读取即将提交的变更内容"""
-
 import git
 
 
 def parse_staged_diff(repo_path: str = ".") -> dict:
+    """读取 Git 暂存区（git diff --cached），返回变更文件列表和 diff 文本"""
     # 打开仓库
     try:
         repo = git.Repo(repo_path)

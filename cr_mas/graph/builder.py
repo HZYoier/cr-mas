@@ -7,6 +7,7 @@ from cr_mas.agents.readability import review_node as readability_node
 from cr_mas.agents.chief import review_node as chief_node
 from cr_mas.agents.extension import review_node as extension_node
 from cr_mas.agents.bug import review_node as bug_node
+from langgraph.checkpoint.memory import MemorySaver
 
 
 def build_review_graph() -> StateGraph:
@@ -29,5 +30,5 @@ def build_review_graph() -> StateGraph:
     builder.add_edge("bug", "chief")
     builder.add_edge("chief", END)
     
-    return builder.compile()
+    return builder.compile()(checkpint = MemorySaver())
 
