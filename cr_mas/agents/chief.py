@@ -1,6 +1,7 @@
 from cr_mas.graph.state import ReviewState
 from cr_mas.memory.sqlite_store import get_agent_accuracy
 from cr_mas.llm.client import parse_llm_json
+from cr_mas.memory.vector_store import store_verdict
 
 
 def _build_memory_context() -> str:
@@ -9,16 +10,28 @@ def _build_memory_context() -> str:
     供 LLM参考
     """
     rows = get_agent_accuracy()
-    if not rows:
-        return "暂无历史数据，按默认权重裁决。\n"
-    
-    lines = ["各 Agent 历史采纳率："]
-    for r in rows:
-        lines.append(
-            f"  - [{r['module'] or '全部模块'}] {r['agent_source']:}"
-            f"{r['accepted']}/{r['total']} 采纳，"
-            f"准确率 {r['rate']}%"
-        )
+    lines = []
+    if rows:
+        lines.append("各 Agent 历史采纳率：")
+        for r in rows:
+            lines.append(
+                f"  - [{r['module'] or '全部模块'}] {r['agent_source']}: "
+                f"{r['accepted']}/{r['total']} 采纳，"
+                f"准确率 {r['rate']}%"
+            )
+
+    try:
+        from cr_mas.memory.vector_store import retrieve_similar
+        similar = retrieve_similar("代码审查建议采纳", k=3)
+        if similar:
+            lines.append("\n历史相似案列（语义检索）：")
+            for i, s in enumerate(similar, 1):
+                lines.append(
+                    f"  案例{i}：{s['document']} "
+                    f"[模块：{s['metadata'].get('module', '?')}]"
+                )
+    except Exception:
+        pass
     return "\n".join(lines)
 
 
@@ -94,6 +107,14 @@ def review_node(state: ReviewState):
         "bug": bug
     }
     memory_text = _build_memory_context()
+
+    from cr_mas.memory.vector_store import retrieve_similar
+    similar = retrieve_similar("代码审查建议采纳", k=3)
+    if similar:
+        trace.append(f"📚 语义检索到 {len(similar)} 条相似历史裁决")
+        for s in similar:
+            trace.append(f"  📄 {s['metadata'].get('module', '?')}: {s['document']}")
+
     llm_analysis = _detect_conflicts_with_llm(reports, memory_text)
     if llm_analysis.get("conflicts_detected"):
         trace.append(
@@ -284,6 +305,13 @@ def review_node(state: ReviewState):
 
     # 汇总最终报告
     total = len(critical_fixes) + len(strong_suggestions) + len(optional_improvements) + len(extension_advice)
+
+    store_verdict(
+        commit_hash=state.get("commit_hash", ""),
+        module="",
+        conflict_type="agent_conflict" if llm_analysis.get("conflict_detected") else "none",
+        decision=f"CRITICAL:{len(critical_fixes)} STRONG:{len(strong_suggestions)} OPTIONAL:{len(optional_improvements)} EXT:{len(extension_advice)}"
+    )
 
     return {
         "final_report": {

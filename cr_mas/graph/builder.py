@@ -30,5 +30,5 @@ def build_review_graph() -> StateGraph:
     builder.add_edge("bug", "chief")
     builder.add_edge("chief", END)
     
-    return builder.compile()(checkpint = MemorySaver())
+    return builder.compile(checkpointer = MemorySaver())
 

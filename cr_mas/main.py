@@ -52,11 +52,14 @@ def commit(message, no_fail, skip_review):
     
     graph = build_review_graph()
     with console.status("[bold green]🔍 审查中...[/bold green]", spinner = "dots12"):
-        result = graph.invoke({
-        "changed_files": git_data["changed_files"],
-        "raw_diff": git_data["raw_diff"],
-        "commit_hash": git_data["commit_hash"]
-    })
+        result = graph.invoke(
+            {
+                "changed_files": git_data["changed_files"],
+                "raw_diff": git_data["raw_diff"],
+                "commit_hash": git_data["commit_hash"],
+            },
+            config={"configurable": {"thread_id": "cr-mas-session"}},
+        )
     final = result.get("final_report")
     summary = final.get("summary", {})
     save_review(result)

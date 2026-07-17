@@ -14,6 +14,7 @@ build/
 
 # 运行时数据库
 *.db
+cr_mas_vectordb/
 
 # 测试缓存
 .pytest_cache/
