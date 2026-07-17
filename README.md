@@ -98,8 +98,8 @@ cr-mas/
 │   │   ├── git_parser.py, file_reader.py
 │   ├── llm/             # LLM 客户端
 │   │   ├── client.py
-│   ├── memory/          # 长期记忆（SQLite）
-│   │   ├── schema.sql, sqlite_store.py
+│   ├── memory/          # 双记忆系统
+│   │   ├── schema.sql, sqlite_store.py, vector_store.py
 │   └── main.py          # CLI 入口
 │   └── config/           # 配置管理
 │       ├── settings.py
@@ -119,7 +119,8 @@ cr-mas/
 | LLM | DeepSeek V4 Flash / V4 Pro |
 | 静态分析 | flake8, bandit, radon, AST |
 | CLI | Click + Rich |
-| 长期记忆 | SQLite |
+| 短期记忆 | LangGraph MemorySaver |
+| 长期记忆 | SQLite（结构化统计）+ ChromaDB（语义检索 RAG） |
 | 版本控制 | GitPython |
 
 ## 许可
